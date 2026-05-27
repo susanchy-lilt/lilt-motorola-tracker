@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lilt · Motorola Query Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --surface: #151820;
+    --surface2: #1c2029;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #e8eaf0;
+    --muted: #7a8099;
+    --accent: #4f8ef7;
+    --green: #34d17a;
+    --amber: #f5a623;
+    --red: #f25c5c;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; min-height: 100vh; }
+  header { border-bottom: 1px solid var(--border); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; background: var(--bg); z-index: 50; }
+  .logo { font-family: var(--font-head); font-weight: 700; font-size: 15px; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+  .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulse 2.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .header-meta { display: flex; align-items: center; gap: 16px; }
+  .cat-tag { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 10px; border: 1px solid var(--border2); border-radius: 3px; color: var(--muted); }
+  .refresh-btn { font-family: var(--font-mono); font-size: 10px; padding: 4px 12px; border-radius: 3px; border: 1px solid var(--border2); background: transparent; color: var(--muted); cursor: pointer; transition: all 0.15s; }
+  .refresh-btn:hover { color: var(--text); border-color: var(--accent); }
+  .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #last-updated { font-size: 10px; color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  .loading-bar { height: 2px; background: var(--surface2); border-radius: 2px; margin-bottom: 2rem; overflow: hidden; display: none; }
+  .loading-bar.active { display: block; }
+  .loading-bar-inner { height: 100%; width: 30%; background: var(--accent); border-radius: 2px; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(400%)} }
+  .error-box { background: rgba(242,92,92,0.1); border: 1px solid rgba(242,92,92,0.25); border-radius: 6px; padding: 12px 16px; font-size: 12px; color: var(--red); margin-bottom: 1.5rem; display: none; }
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 2rem; }
+  @media (max-width: 800px) { .metrics { grid-template-columns: repeat(3, 1fr); } }
+  .metric { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; position: relative; overflow: hidden; }
+  .metric::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent); opacity: 0.4; }
+  .metric.danger::before { background: var(--red); opacity: 0.7; }
+  .metric.success::before { background: var(--green); opacity: 0.5; }
+  .metric-label { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .metric-val { font-family: var(--font-head); font-size: 26px; font-weight: 700; line-height: 1; color: var(--text); }
+  .metric-sub { font-size: 9px; color: var(--muted); margin-top: 4px; }
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 2rem; }
+  @media (max-width: 640px) { .charts-row { grid-template-columns: 1fr; } }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  .chart-title { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+  .table-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px; }
+  .table-title { font-family: var(--font-head); font-size: 13px; font-weight: 600; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-btn { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 12px; border-radius: 3px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; transition: all 0.12s; }
+  .filter-btn:hover { border-color: var(--border2); color: var(--text); }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 500; }
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 2rem; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); background: var(--surface2); white-space: nowrap; }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: var(--surface2); }
+  .topic-link { color: var(--text); text-decoration: none; }
+  .topic-link:hover { color: var(--accent); }
+  .pill { display: inline-block; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 2px; font-weight: 500; }
+  .pill-open { background: rgba(245,166,35,0.15); color: var(--amber); border: 1px solid rgba(245,166,35,0.2); }
+  .pill-answered { background: rgba(52,209,122,0.12); color: var(--green); border: 1px solid rgba(52,209,122,0.2); }
+  .pill-overdue { background: rgba(242,92,92,0.12); color: var(--red); border: 1px solid rgba(242,92,92,0.2); }
+  .rt-fast { color: var(--green); }
+  .rt-mid { color: var(--amber); }
+  .rt-slow { color: var(--red); }
+  .empty-row td { text-align: center; color: var(--muted); padding: 3rem; }
+  footer { border-top: 1px solid var(--border); padding: 1.25rem 2rem; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    Lilt Query Tracker
+  </div>
+  <div class="header-meta">
+    <span class="cat-tag">motorola</span>
+    <span id="last-updated">Loading…</span>
+    <button class="refresh-btn" id="refresh-btn" onclick="loadData()">↻ Refresh</button>
+  </div>
+</header>
+
+<main>
+  <div class="loading-bar" id="loading-bar"><div class="loading-bar-inner"></div></div>
+  <div class="error-box" id="error-box"></div>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-label">Total topics</div><div class="metric-val" id="m-total">—</div></div>
+    <div class="metric"><div class="metric-label">Open</div><div class="metric-val" id="m-open">—</div></div>
+    <div class="metric success"><div class="metric-label">Avg response</div><div class="metric-val" id="m-avg">—</div><div class="metric-sub">hours to first reply</div></div>
+    <div class="metric"><div class="metric-label">Median response</div><div class="metric-val" id="m-med">—</div><div class="metric-sub">hours to first reply</div></div>
+    <div class="metric danger"><div class="metric-label">SLA breaches</div><div class="metric-val" id="m-sla">—</div><div class="metric-sub">&gt;24h target</div></div>
+  </div>
+
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">Daily query volume — last 30 days</div>
+      <div style="position:relative;height:180px;">
+        <canvas id="volChart" role="img" aria-label="Daily query volume">Topics per day.</canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Response time distribution</div>
+      <div style="position:relative;height:180px;">
+        <canvas id="rtChart" role="img" aria-label="Response time distribution">Response time buckets.</canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-header">
+    <span class="table-title">Topics &nbsp;<span id="topic-count" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);font-weight:400;"></span></span>
+    <div class="filters">
+      <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+      <button class="filter-btn" onclick="setFilter('open',this)">Open</button>
+      <button class="filter-btn" onclick="setFilter('answered',this)">Answered</button>
+      <button class="filter-btn" onclick="setFilter('overdue',this)">Overdue</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36%">Topic</th>
+            <th style="width:11%">Status</th>
+            <th style="width:11%">Created</th>
+            <th style="width:13%">First response</th>
+            <th style="width:10%">Response time</th>
+            <th style="width:8%">Replies</th>
+            <th style="width:8%">Views</th>
+          </tr>
+        </thead>
+        <tbody id="topic-tbody">
+          <tr class="empty-row"><td colspan="7">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>discourse.lilt.com / c / motorola / 171</span>
+  <span>Auto-refreshes every 4 hours via GitHub Actions</span>
+</footer>
+
+<script>
+const BASE = 'https://discourse.lilt.com';
+const SLA = 24;
+let topics = [];
+let activeFilter = 'all';
+let volChart = null, rtChart = null;
+
+async function loadData() {
+  const btn = document.getElementById('refresh-btn');
+  const bar = document.getElementById('loading-bar');
+  const errBox = document.getElementById('error-box');
+  btn.disabled = true;
+  bar.classList.add('active');
+  errBox.style.display = 'none';
+
+  try {
+    const res = await fetch('data.json?t=' + Date.now());
+    if (!res.ok) throw new Error('Could not load data.json (HTTP ' + res.status + ')');
+    const json = await res.json();
+    topics = json.topics || [];
+    document.getElementById('last-updated').textContent =
+      'Synced ' + (json.synced_at || 'unknown');
+    render();
+  } catch(e) {
+    errBox.textContent = 'Failed to load data: ' + e.message;
+    errBox.style.display = 'block';
+  }
+
+  bar.classList.remove('active');
+  btn.disabled = false;
+}
+
+function setFilter(f, el) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderTable();
+}
+
+function render() {
+  const rts = topics.filter(t => t.responseHours != null).map(t => t.responseHours);
+  const avg = rts.length ? rts.reduce((a,b)=>a+b,0)/rts.length : null;
+  const sorted = [...rts].sort((a,b)=>a-b);
+  const med = sorted.length ? sorted[Math.floor(sorted.length/2)] : null;
+  const overSLA = topics.filter(t => t.status === 'overdue').length;
+  const open = topics.filter(t => t.status === 'open').length;
+
+  document.getElementById('m-total').textContent = topics.length || '—';
+  document.getElementById('m-open').textContent = topics.length ? open : '—';
+  document.getElementById('m-avg').textContent = avg !== null ? avg.toFixed(1)+'h' : '—';
+  document.getElementById('m-med').textContent = med !== null ? med.toFixed(1)+'h' : '—';
+  document.getElementById('m-sla').textContent = topics.length ? overSLA : '—';
+
+  renderVolChart();
+  renderRtChart(rts);
+  renderTable();
+}
+
+function renderTable() {
+  const filtered = activeFilter === 'all' ? topics : topics.filter(t => t.status === activeFilter);
+  document.getElementById('topic-count').textContent =
+    topics.length ? '(' + filtered.length + ' of ' + topics.length + ')' : '';
+  const tbody = document.getElementById('topic-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">' +
+      (topics.length ? 'No topics match this filter.' : 'No data loaded yet.') + '</td></tr>';
+    return;
+  }
+  const pills = { open:'pill-open', answered:'pill-answered', overdue:'pill-overdue' };
+  tbody.innerHTML = [...filtered]
+    .sort((a,b) => new Date(b.created) - new Date(a.created))
+    .map(t => {
+      const rtClass = t.responseHours == null ? '' :
+        t.responseHours <= SLA/2 ? 'rt-fast' :
+        t.responseHours <= SLA ? 'rt-mid' : 'rt-slow';
+      const rtStr = t.responseHours != null ? t.responseHours.toFixed(1)+'h' :
+        '<span style="color:var(--muted)">—</span>';
+      const replied = t.firstReply ? t.firstReply.slice(0,10) :
+        '<span style="color:var(--muted)">awaiting</span>';
+      return '<tr>' +
+        '<td style="max-width:280px;" title="' + t.title + '">' +
+          '<a class="topic-link" href="' + BASE + '/t/' + t.slug + '/' + t.id +
+          '" target="_blank" rel="noopener">' + t.title + '</a></td>' +
+        '<td><span class="pill ' + (pills[t.status]||'pill-open') + '">' + t.status + '</span></td>' +
+        '<td>' + (t.created ? t.created.slice(0,10) : '—') + '</td>' +
+        '<td>' + replied + '</td>' +
+        '<td><span class="' + rtClass + '">' + rtStr + '</span></td>' +
+        '<td>' + t.replies + '</td>' +
+        '<td>' + (t.views||0).toLocaleString() + '</td>' +
+      '</tr>';
+    }).join('');
+}
+
+function renderVolChart() {
+  const now = new Date();
+  const days = [], counts = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate()-i);
+    const ds = d.toISOString().slice(0,10);
+    days.push(i % 5 === 0 ? ds.slice(5) : '');
+    counts.push(topics.filter(t => t.created && t.created.slice(0,10) === ds).length);
+  }
+  const ctx = document.getElementById('volChart').getContext('2d');
+  if (volChart) volChart.destroy();
+  volChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: days, datasets: [{ data: counts, backgroundColor: 'rgba(79,142,247,0.7)',
+      hoverBackgroundColor: '#4f8ef7', borderRadius: 3, borderSkipped: false }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#7a8099', font: { family: 'DM Mono', size: 9 } } },
+        y: { beginAtZero: true, ticks: { stepSize: 1, color: '#7a8099', font: { family: 'DM Mono', size: 9 } },
+          grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+function renderRtChart(rts) {
+  const labels = ['< 2h','2–8h','8–24h','1–3d','> 3d'];
+  const counts = [0,0,0,0,0];
+  rts.forEach(h => {
+    if (h < 2) counts[0]++;
+    else if (h < 8) counts[1]++;
+    else if (h < 24) counts[2]++;
+    else if (h < 72) counts[3]++;
+    else counts[4]++;
+  });
+  const ctx = document.getElementById('rtChart').getContext('2d');
+  if (rtChart) rtChart.destroy();
+  rtChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: counts,
+      backgroundColor: ['rgba(52,209,122,0.7)','rgba(52,209,122,0.5)',
+        'rgba(245,166,35,0.6)','rgba(242,92,92,0.5)','rgba(242,92,92,0.8)'],
+      borderRadius: 3, borderSkipped: false }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#7a8099', font: { family: 'DM Mono', size: 9 } } },
+        y: { beginAtZero: true, ticks: { stepSize: 1, color: '#7a8099', font: { family: 'DM Mono', size: 9 } },
+          grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
