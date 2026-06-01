@@ -3,7 +3,6 @@
 Discourse Motorola sync — automated version for GitHub Actions.
 Reads API credentials from environment variables and writes data.json.
 """
-
 import requests
 import json
 import time
@@ -25,7 +24,7 @@ HEADERS = {
 }
 
 
-def api_get(path, retries=3):
+def api_get(path, retries=5):
     url = BASE + path
     for attempt in range(retries):
         try:
@@ -35,13 +34,19 @@ def api_get(path, retries=3):
                 print(f"  Rate limited — waiting {wait}s…")
                 time.sleep(wait)
                 continue
+            if r.status_code in (502, 503, 504):
+                wait = 10 * (attempt + 1)  # 10s, 20s, 30s, 40s, 50s
+                print(f"  Retry {attempt + 1}: {r.status_code} — waiting {wait}s…")
+                time.sleep(wait)
+                continue
             r.raise_for_status()
             return r.json()
         except requests.RequestException as e:
             if attempt == retries - 1:
                 raise
             print(f"  Retry {attempt + 1}: {e}")
-            time.sleep(3)
+            time.sleep(5)
+    raise requests.RequestException(f"Failed after {retries} attempts: {url}")
 
 
 def hours_apart(a, b):
@@ -58,21 +63,25 @@ def hours_apart(a, b):
 
 
 print(f"Fetching topics from {BASE}/c/{CAT_SLUG}/{CAT_ID}…")
-
 all_topics = []
 page = 0
-while True:
-    print(f"  Page {page + 1} ({len(all_topics)} topics so far)…")
-    data = api_get(f"/c/{CAT_SLUG}/{CAT_ID}.json?page={page}")
-    topic_list = data.get("topic_list", {})
-    topics = topic_list.get("topics", [])
-    if not topics:
-        break
-    all_topics.extend([t for t in topics if not t.get("pinned_globally")])
-    if not topic_list.get("more_topics_url") or len(topics) < 30:
-        break
-    page += 1
-    time.sleep(0.2)
+
+try:
+    while True:
+        print(f"  Page {page + 1} ({len(all_topics)} topics so far)…")
+        data = api_get(f"/c/{CAT_SLUG}/{CAT_ID}.json?page={page}")
+        topic_list = data.get("topic_list", {})
+        topics = topic_list.get("topics", [])
+        if not topics:
+            break
+        all_topics.extend([t for t in topics if not t.get("pinned_globally")])
+        if not topic_list.get("more_topics_url") or len(topics) < 30:
+            break
+        page += 1
+        time.sleep(0.2)
+except requests.RequestException as e:
+    print(f"\nDiscourse unavailable — skipping sync: {e}")
+    raise SystemExit(0)  # Exit cleanly so GitHub Actions doesn't fail
 
 print(f"\nEnriching {len(all_topics)} topics…")
 now_iso = datetime.now(timezone.utc).isoformat()
